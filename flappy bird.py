@@ -6,6 +6,7 @@ Chạy:  pip install streamlit
 
 Điều khiển: Space / Mũi tên lên (máy tính) hoặc chạm vào canvas (điện thoại).
 Chọn độ khó: bấm nút DỄ / THƯỜNG / KHÓ (hoặc phím 1 / 2 / 3).
+Nhạc nền: phát khi bắt đầu chơi, dừng khi thua (nút 🔊/🔇 để tắt/bật).
 """
 import streamlit as st
 import streamlit.components.v1 as components
@@ -15,13 +16,15 @@ GAME_HTML = r"""
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  html,body{margin:0;background:transparent;display:flex;justify-content:center;touch-action:none;
+  html,body{margin:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:center;touch-action:none;
     user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
   canvas{width:100%;max-width:347px;aspect-ratio:2/3;height:auto;border-radius:16px;
     box-shadow:0 8px 24px rgba(0,0,0,.35);outline:none;cursor:pointer}
 </style></head>
 <body>
 <canvas id="c" tabindex="0"></canvas>
+<div id="yt"></div>
+<div style="font:12px sans-serif;opacity:.7">🎵 Nhạc nền: tự phát khi bắt đầu chơi, dừng khi thua</div>
 <script>
 const W=320,H=480,GH=64,R=12,PW=56,INK='#533846';
 const FONT='"Trebuchet MS",system-ui,sans-serif';
@@ -42,6 +45,26 @@ const rgb=a=>'rgb('+(a[0]|0)+','+(a[1]|0)+','+(a[2]|0)+')';
 let diff='normal',best={easy:0,normal:0,hard:0};
 try{const d=localStorage.getItem('fb_diff');if(LV[d])diff=d;Object.assign(best,JSON.parse(localStorage.getItem('fb_best')||'{}'))}catch(e){}
 const save=()=>{try{localStorage.setItem('fb_diff',diff);localStorage.setItem('fb_best',JSON.stringify(best))}catch(e){}};
+
+/* ---------- Nhạc nền (YouTube IFrame API) ---------- */
+const VID='488ceQWoGGw',SPK={x:282,y:8,w:30,h:26};
+let yt=null,ytOk=false,playing=false,muted=false;
+try{muted=localStorage.getItem('fb_mute')==='1'}catch(e){}
+(function(){const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s)})();
+window.onYouTubeIframeAPIReady=()=>{
+  yt=new YT.Player('yt',{width:200,height:200,videoId:VID,
+    playerVars:{playsinline:1,controls:0,disablekb:1,fs:0,rel:0,loop:1,playlist:VID,modestbranding:1},
+    events:{onReady:()=>{ytOk=true;yt.setVolume(70);if(playing&&!muted)yt.playVideo()}}});
+};
+function music(on){
+  playing=on;if(!ytOk)return;
+  try{if(on&&!muted){yt.seekTo(0,true);yt.playVideo()}else yt.pauseVideo()}catch(e){}
+}
+function toggleMute(){
+  muted=!muted;try{localStorage.setItem('fb_mute',muted?'1':'0')}catch(e){}
+  if(!ytOk)return;
+  try{if(muted)yt.pauseVideo();else if(playing)yt.playVideo()}catch(e){}
+}
 
 let st='ready',bird,pipes,score,nextSpace,dist=0,clock=0,overAt=0,shake=0,flash=0,bump=0,newBest=false;
 const parts=[],clouds=[],stars=[],bld=[];
@@ -67,9 +90,9 @@ function burst(){for(let i=0;i<22;i++)parts.push({x:bird.x,y:bird.y,vx:rnd(-220,
 
 /* ---------- điều khiển ---------- */
 function flap(){bird.v=LV[diff].f;puff()}
-function startGame(){reset();st='play';flap()}
+function startGame(){reset();st='play';flap();music(true)}
 function gameOver(){
-  st='over';overAt=clock;shake=.4;flash=1;burst();
+  st='over';overAt=clock;shake=.4;flash=1;burst();music(false);
   if(score>best[diff]){best[diff]=score;newBest=true;save()}
 }
 const inBtn=(x,y)=>x>=BTN.x&&x<=BTN.x+BTN.w&&y>=BTN.y&&y<=BTN.y+BTN.h;
@@ -79,6 +102,7 @@ function act(px,py){
   const key=px==null;
   if(st==='play'){flap();return}
   if(!canPick())return;
+  if(!key&&px>=SPK.x&&px<=SPK.x+SPK.w&&py>=SPK.y&&py<=SPK.y+SPK.h){toggleMute();return}
   if(!key){const k=selHit(px,py);if(k){diff=k;save();return}}
   if(key||inBtn(px,py))startGame();
 }
@@ -238,6 +262,7 @@ function selector(){
     tx(LV[s.k].n,s.x+s.w/2,SELY+SELH/2+(on?4:1),on?15:13,'#fff',on);
   });
 }
+function speaker(){rr(SPK.x,SPK.y,SPK.w,SPK.h,8,'rgba(0,0,0,.35)');tx(muted?'🔇':'🔊',SPK.x+SPK.w/2,SPK.y+SPK.h/2+1,15,'#fff')}
 function medalFor(s){return s>=40?'#8fe8ff':s>=30?'#ffd700':s>=20?'#c8ccd2':s>=10?'#cd7f32':null}
 function draw(){
   X.setTransform(D,0,0,D,0,0);
@@ -259,7 +284,7 @@ function draw(){
     tx('FLAPPY',W/2,78,40,'#ffd23f',true);tx('BIRD',W/2,116,40,'#ff7a3d',true);
     selector();button('BẮT ĐẦU');
     tx('Space / ↑ / chạm để vỗ cánh',W/2,385,14,'#fff',true);
-    tx('Phím 1 · 2 · 3: chọn độ khó',W/2,406,12,'#fff',true);
+    tx('Phím 1 · 2 · 3: chọn độ khó',W/2,406,12,'#fff',true);speaker();
   }
   if(st==='over'){
     X.fillStyle='rgba(0,0,0,.28)';X.fillRect(0,0,W,H);
@@ -272,7 +297,7 @@ function draw(){
     tx('CAO NHẤT · '+L.n,200,170,11,'#a8501b');tx(best[diff],200,194,24,'#fff',true);
     if(newBest&&score>0){rr(238,180,36,18,6,'#ff4d4d',INK);tx('MỚI',256,189,10,'#fff')}
     selector();button('CHƠI LẠI');
-    tx('Space: chơi lại · 1 · 2 · 3: độ khó',W/2,392,12,'#fff',true);
+    tx('Space: chơi lại · 1 · 2 · 3: độ khó',W/2,392,12,'#fff',true);speaker();
   }
   X.restore();
   if(flash>0){X.fillStyle='rgba(255,255,255,'+flash*.6+')';X.fillRect(0,0,W,H)}
@@ -290,4 +315,4 @@ st.markdown("<h2 style='text-align:center'>🐤 Flappy Bird</h2>", unsafe_allow_
 st.caption("Chọn độ khó DỄ / THƯỜNG / KHÓ rồi bấm BẮT ĐẦU. Dùng Space / ↑ hoặc chạm màn hình để vỗ cánh. "
            "Nếu phím không phản hồi, hãy bấm vào khung game một lần.")
 
-components.html(GAME_HTML, height=540, scrolling=False)
+components.html(GAME_HTML, height=780, scrolling=False)
